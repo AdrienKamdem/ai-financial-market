@@ -24,10 +24,10 @@ def require_cleaning(func):
     return wrapper
 
 def require_embedding(func):
-    def wrapper(self, *args, **kwargs):
-        if not self.payload_embeddings:
+    def wrapper(self):
+        if self.payload_embeddings is None: # tensor can't be evaluated as bool
             raise ValueError("Payload is not embedded. Call embedding_text() first!")
-        return func(self, *args, **kwargs)
+        return func(self)
     return wrapper
 
 class DatasetProcessor:
@@ -61,6 +61,7 @@ class DatasetProcessor:
                 index += 1
         return self.payload
 
+    @require_payload
     def text_cleaning(self, embedding_model_name:str)-> dict:
         """
         Apply text cleaning to all texts in the dataset based on the chosen embedding model.
@@ -101,6 +102,7 @@ class DatasetProcessor:
 
         return self.payload_cleaned
 
+    @require_cleaning
     def embedding_text(self, batch_size:int)-> torch.Tensor:
         """
         Generate embeddings after cleaning the text.
@@ -135,6 +137,7 @@ class DatasetProcessor:
         )
         return self.payload_embeddings
 
+    @require_embedding
     def split_into_test_train(self)-> Tuple[List[str], List[str], List[str], List[str]]:
         """
         given our dataset -> split it into train test 
