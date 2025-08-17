@@ -1,0 +1,35 @@
+embedding_models = {
+    "XLNet-base-cased": {
+        "model_name": "xlnet-base-cased",
+        "model_type": "transformers",
+        "model_class": "XLNetModel",
+        "model_kwargs": {},
+        "tokenizer_class": "AutoTokenizer",
+        "tokenizer_kwargs": {},
+        "embedding_dim": 768,
+        "batch_size": 32,
+        "device": "cuda" if torch.cuda.is_available() else "cpu",
+    },
+    "stsb-bert-base": {
+        "model_name": "sentence-transformers/stsb-bert-base",
+        "model_type": "sentence-transformers",
+        "model_class": "SentenceTransformer",
+        "model_kwargs": {},
+        "tokenizer_class": "AutoTokenizer",
+        "tokenizer_kwargs": {},
+        "embedding_dim": 512,
+        "batch_size": 32,
+        "device": "cuda" if torch.cuda.is_available() else "cpu",
+    },
+    "tf-idf": {
+        "model_name": "tf-idf",
+        "model_type": "tf-idf",
+        "model_class": "TfidfVectorizer",
+        "model_kwargs": {"ngram_range": (1, 2), "max_features": 10000},
+        "tokenizer_class": None,
+        "tokenizer_kwargs": {},
+        "embedding_dim": 10000,
+        "batch_size": 32,
+        "device": "cpu",
+    }
+}
