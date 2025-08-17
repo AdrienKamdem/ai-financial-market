@@ -1,32 +1,65 @@
 import csv
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from collections import Counter
 import numpy as np
-
+import re
+import string
+import nltk
+from nltk.stem import WordNetLemmatizer
+import json
 
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
 from transformers import AutoTokenizer, AutoModel
 import torch
+from torch.utils.data import DataLoader
+
+stop_words = nltk.download('stopwords')
+lemmatizer = WordNetLemmatizer()
+
+def require_payload(func):
+    def wrapper(self, *args, **kwargs):
+        if not self.payload:
+            raise ValueError("Payload is empty. Call get_payload_as_dictionary() first!")
+        return func(self, *args, **kwargs)
+    return wrapper
+
+def require_cleaning(func):
+    def wrapper(self, *args, **kwargs):
+        if not self.payload_cleaned:
+            raise ValueError("Payload is not cleaned. Call text_cleaning() first!")
+        return func(self, *args, **kwargs)
+    return wrapper
+
+def require_embedding(func):
+    def wrapper(self, *args, **kwargs):
+        if not self.payload_embeddings:
+            raise ValueError("Payload is not embedded. Call embedding_text() first!")
+        return func(self, *args, **kwargs)
+    return wrapper
 
 class DatasetProcessor:
 
     def __init__(self, csv_path:str):
         self.csv_path = csv_path
-        self.payload = {}
-        self.X_train = []
-        self.X_test = []
-        self.y_train = []
-        self.y_test = []
+        self.payload:Optional[dict] = None
+        self.payload_cleaned:Optional[dict] = None
+        self.payload_embeddings:Optional[dict] = None
+        self.X_train: Optional[List[str]] = None
+        self.X_test: Optional[List[str]] = None
+        self.y_train:Optional[List[str]] = None
+        self.y_test:Optional[List[str]] = None
+        self.embedding_model:Optional[str] = None
     
-    def __str__(self):
+    def __str__(self)-> str:
         return f"****** Dataset in use: {self.csv_path} ***********"
     
     def get_payload_as_dictionary(self)->dict:
         """
         based on csv path return the data in form of dictionary payload for faster processing
         """
+        self.payload = {}
         index = 0
         with open(self.csv_path, newline='', encoding='utf-8-sig') as csvfile:
             reader = csv.DictReader(csvfile)
@@ -36,25 +69,126 @@ class DatasetProcessor:
                 self.payload[index] = row
                 index += 1
         return self.payload
-    
-    def text_cleaning(self):
-        pass
-    
-    def embedding_text(self):
-        pass
-    
-    def split_into_test_train(self):
+
+    @require_payload
+    def text_cleaning(self, embedding_model_name:str)-> dict:
+        """
+        Apply text cleaning to all texts in the dataset based on the chosen embedding model.
+        Stores the cleaned texts in self.payload_cleaned.
+        """
+        self.payload_cleaned = {}
+        self.embedding_model = embedding_model_name
+
+        for idx, row in self.payload.items():
+            text = row['text']
+
+            # Basic cleaning
+            text = text.strip()
+            text = re.sub(r'\s+', ' ', text)
+            text = re.sub(r"http\S+|www\S+|https\S+", '', text)
+            text = re.sub(r'\S+@\S+', '', text)
+            text = ''.join(c for c in text if c.isprintable())
+
+            # Cleaning depending on embedding model
+            if self.embedding_model:
+                model = self.embedding_model.lower()
+                if 'bert' in model or 'gpt' in model and 'uncased' not in model:
+                    # Minimal cleaning
+                    cleaned_text = text
+                elif 'uncased' in model:
+                    cleaned_text = text.lower()
+                else:
+                    # Classical models (TF-IDF, Word2Vec)
+                    text = text.lower()
+                    text = text.translate(str.maketrans('', '', string.punctuation))
+                    words = text.split()
+                    words = [lemmatizer.lemmatize(w) for w in words if w not in stop_words]
+                    cleaned_text = ' '.join(words)
+            else:
+                # Default to classical cleaning if no embedding_model specified
+                text = text.lower()
+                text = text.translate(str.maketrans('', '', string.punctuation))
+                words = text.split()
+                words = [lemmatizer.lemmatize(w) for w in words if w not in stop_words]
+                cleaned_text = ' '.join(words)
+
+            # Store cleaned text
+            self.payload_cleaned[idx] = {**row, 'cleaned_text': cleaned_text}
+
+        return self.payload_cleaned
+
+    @require_cleaning
+    def embedding_text(self, batch_size=32):
+        """
+        Generate embeddings after cleaning the text using batching.
+        - Uses GPU (CUDA/MPS) if available, otherwise falls back to CPU.
+        - Performs mean pooling on model outputs.
+        - Processes the dataset in batches for speed.
+        code mostly taken from https://huggingface.co/sentence-transformers/stsb-bert-base
+        """
+
+        self.payload_embeddings = {}
+
+        # check if GPU is available on machine
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            print("Using CUDA GPU")
+        elif torch.backends.mps.is_available():
+            device = torch.device("mps")
+            print("Using Apple MPS")
+        else:
+            device = torch.device("cpu")
+            print("Using CPU")
+
+        def mean_pooling(model_output, attention_mask):
+            token_embeddings = model_output[0]  # all token embeddings
+            input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+            return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+
+        # tokenizer + model loading outside the loop for efficiency
+        tokenizer = AutoTokenizer.from_pretrained(self.embedding_model)
+        model = AutoModel.from_pretrained(self.embedding_model).to(device)
+
+        # batch processing for embbedding
+        items = list(self.payload_cleaned.items())  # [(idx, row_dict), ...]
+        for i in range(0, len(items), batch_size):
+            batch = items[i:i + batch_size]
+
+            # Extract indices and texts from the batch
+            batch_idxs = [idx for idx, row in batch]
+            batch_texts = [row["cleaned_text"] for idx, row in batch]
+
+            # Tokenize batch
+            encoded_input = tokenizer(batch_texts, padding=True, truncation=True, max_length=512, return_tensors='pt')
+            encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
+
+            # Embedding pass
+            with torch.no_grad():
+                model_output = model(**encoded_input)
+
+            # Pooling
+            sentence_embeddings = mean_pooling(model_output, encoded_input['attention_mask'])
+            sentence_embeddings = sentence_embeddings.cpu().numpy()
+
+            # Store results
+            for idx, row, embedding in zip(batch_idxs, batch, sentence_embeddings):
+                self.payload_embeddings[idx] = {**row[1], 'embedding': embedding}
+
+        return self.payload_embeddings
+
+    @require_embedding
+    def split_into_test_train(self)-> Tuple[List[str], List[str], List[str], List[str]]:
         """
         given our dataset -> split it into train test 
         (no validate as dataset is too small and excessively imbalanced and dont want to sample lowest class which might skew models)
         return train and test. Class distribution in train set ~ Class distribution in test set
         """  
-        text = [row['text'] for row in self.payload.values()]
-        labels = [row['generated'] for row in self.payload.values()]
+        cleaned_text = [row['cleaned_text'] for row in self.payload_cleaned.values()]
+        labels = [row['generated'] for row in self.payload_cleaned.values()]
         labels_distribution = Counter(labels)
         count_human, count_ai = labels_distribution['0']/(labels_distribution['0']+labels_distribution['1']), labels_distribution['1']/(labels_distribution['0']+labels_distribution['1'])
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            text,
+            cleaned_text,
             labels,
             test_size = 0.3,
             stratify = labels
@@ -74,6 +208,29 @@ if __name__ == "__main__":
     print(Counter(texts))
     print(Counter(texts)['1']/sum(Counter(texts).values()))
     print(Counter(texts)['0'])
+    print("\n\n\n")
+    print("Clean dataset")
+    payload_cleaned = ai_human_dataset.text_cleaning(embedding_model_name='sentence-transformers/stsb-bert-base')
+    print(payload_cleaned.get(0))
+    print(len(payload_cleaned))
+    print("\n\n\n")
+    
+    #ALREADY DONE JUST LOAD FROM FILE embeddings.npy
+
+    # print("Embedding text")
+    # payload_embeddings = ai_human_dataset.embedding_text()
+    # print(payload_embeddings.get(0))
+    # print(len(payload_embeddings))
+    # print("Embedding shape:", payload_embeddings[0]['embedding'].shape)
+    # print("Embedding model used:", ai_human_dataset.embedding_model)
+
+    # # Extract embeddings from payload
+    # embeddings = np.vstack([v['embedding'] for v in payload_embeddings.values()])
+
+    # # Save to a file
+    # np.save("embeddings.npy", embeddings)
+    # print("embeddings saved to embeddings.npy")
+
     print("\n\n\n")
     print("Split train test")
     X_train, X_test, y_train, y_test = ai_human_dataset.split_into_test_train()
