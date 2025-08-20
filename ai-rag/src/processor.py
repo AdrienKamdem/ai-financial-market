@@ -155,68 +155,69 @@ class DatasetProcessor:
         return self.X_train, self.X_test, self.y_train, self.y_test
 
 
+########################################### DATA MINING/ANALYSIS/REPORTING ##########################################################
 
-if __name__ == "__main__":
-    csv_path = '/Users/adrienkamdem/ai-financial-market/ai-rag/data/AI Generated Essays Dataset.csv'
-    print("Dataset Processor")
-    print("Load dataset")
-    ai_human_dataset = DatasetProcessor(csv_path)
-    print(ai_human_dataset)
+# if __name__ == "__main__":
+#     csv_path = '/Users/adrienkamdem/ai-financial-market/ai-rag/data/AI Generated Essays Dataset.csv'
+#     print("Dataset Processor")
+#     print("Load dataset")
+#     ai_human_dataset = DatasetProcessor(csv_path)
+#     print(ai_human_dataset)
 
-    print("\n\n\n")
-    print("Get payload as dictionary")
-    payload = ai_human_dataset.get_payload_as_dictionary()
-    print(payload.get(0))
-    print(len(payload))
+#     print("\n\n\n")
+#     print("Get payload as dictionary")
+#     payload = ai_human_dataset.get_payload_as_dictionary()
+#     print(payload.get(0))
+#     print(len(payload))
 
-    print("\n\n\n")
-    print("Distribution of labels in dataset")
-    texts = [row["generated"] for row in payload.values()]
-    print(set(texts))
-    print(Counter(texts))
-    print(Counter(texts)['1']/sum(Counter(texts).values()))
-    print(Counter(texts)['0'])
+#     print("\n\n\n")
+#     print("Distribution of labels in dataset")
+#     texts = [row["generated"] for row in payload.values()]
+#     print(set(texts))
+#     print(Counter(texts))
+#     print(Counter(texts)['1']/sum(Counter(texts).values()))
+#     print(Counter(texts)['0'])
 
-    print("\n\n\n")
-    print("Clean dataset")
-    payload_cleaned = ai_human_dataset.text_cleaning(embedding_model_name='all-MiniLM-L6-v2')
-    print(payload_cleaned.get(0))
-    print(len(payload_cleaned))
+#     print("\n\n\n")
+#     print("Clean dataset")
+#     payload_cleaned = ai_human_dataset.text_cleaning(embedding_model_name='all-MiniLM-L6-v2')
+#     print(payload_cleaned.get(0))
+#     print(len(payload_cleaned))
     
-    print("\n\n\n")
-    print("Embedding dataset")
-    payload_embeddings = ai_human_dataset.embedding_text(batch_size=12)
-    print("Embeddings shape:", payload_embeddings.shape)
-    print("Embeddings dtype:", payload_embeddings.dtype)
-    print("Embeddings type:", payload_embeddings.type)
+#     print("\n\n\n")
+#     print("Embedding dataset")
+#     payload_embeddings = ai_human_dataset.embedding_text(batch_size=12)
+#     print("Embeddings shape:", payload_embeddings.shape)
+#     print("Embeddings dtype:", payload_embeddings.dtype)
+#     print("Embeddings type:", payload_embeddings.type)
 
 
-    print("\n\n\n")
-    print("Split train test")
-    X_train, X_test, y_train, y_test = ai_human_dataset.split_into_test_train()
-    print(X_train.shape)
-    print(X_test.shape)
-    print(len(y_train))
-    print(len(y_test))
+#     print("\n\n\n")
+#     print("Split train test")
+#     X_train, X_test, y_train, y_test = ai_human_dataset.split_into_test_train()
+#     print(X_train.shape)
+#     print(X_test.shape)
+#     print(len(y_train))
+#     print(len(y_test))
 
 
-    print("\n\n\n\n")
-    print("Distribution of labels after splitting")
-    print(Counter(y_train))
-    print(Counter(y_train)['1']/sum(Counter(y_train).values()))
-    print(Counter(y_test)['1']/sum(Counter(y_test).values()))
+#     print("\n\n\n\n")
+#     print("Distribution of labels after splitting")
+#     print(Counter(y_train))
+#     print(Counter(y_train)['1']/sum(Counter(y_train).values()))
+#     print(Counter(y_test)['1']/sum(Counter(y_test).values()))
 
-    print("\n\n\n\n")
-    print("textual data analysis")
+#     print("\n\n\n\n")
+#     print("textual data analysis")
     
-    text = [row["text"] for row in payload.values()]
-    print("average number of words per essays created")
-    print(sum(list(map(lambda s: len(s.split()), text)))/len(text))
+#     text = [row["text"] for row in payload.values()]
+#     print("average number of words per essays created")
+#     print(sum(list(map(lambda s: len(s.split()), text)))/len(text))
 
-    text_ai = [row["text"] for row in payload.values() if row['generated']=='1']
-    print("average number of words per essays created by AI")
-    print(sum(list(map(lambda s: len(s.split()), text_ai)))/len(text_ai))
+#     text_ai = [row["text"] for row in payload.values() if row['generated']=='1']
+#     print("average number of words per essays created by AI")
+#     print(sum(list(map(lambda s: len(s.split()), text_ai)))/len(text_ai))
 
-    text_h = [row["text"] for row in payload.values() if row['generated']=='0']
-    print("average number of words per essays created by Human")
-    print(sum(list(map(lambda s: len(s.split()), text_h)))/len(text_h))
+#     text_h = [row["text"] for row in payload.values() if row['generated']=='0']
+#     print("average number of words per essays created by Human")
+#     print(sum(list(map(lambda s: len(s.split()), text_h)))/len(text_h))
