@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-
 class MLPModel(nn.Module):
     def __init__(self, hidden1=128, hidden2=64):
         super(MLPModel, self).__init__()
@@ -12,12 +11,12 @@ class MLPModel(nn.Module):
         self.fc3 = nn.Linear(hidden2, 1)
 
     def forward(self, x):
-        x = torch.sigmoid(self.fc1(x))
-        x = torch.sigmoid(self.fc2(x))
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
         x = self.fc3(x)  # logits
         return x
 
-def train_model(train_loader, model, optimizer, criterion, epochs=5):
+def train_model(train_loader, model, optimizer, criterion, lambda_l1, epochs=5):
     history = []
     for epoch in range(epochs):
         running_loss = 0.0
@@ -25,6 +24,8 @@ def train_model(train_loader, model, optimizer, criterion, epochs=5):
             optimizer.zero_grad()
             outputs = model(batch_x)
             loss = criterion(outputs, batch_y)
+            l1_norm = sum(p.abs().sum() for p in model.parameters()) # Add L1 penalty
+            loss = loss + lambda_l1 * l1_norm
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
@@ -42,14 +43,14 @@ def compute_metrics(y_true, y_pred):
         "f1": f1_score(y_true, y_pred, zero_division=0)
     }
 
-def evaluate_model(loader, model):
+def evaluate_model(loader, model, threshold):
     model.eval()
     all_preds = []
     all_labels = []
     with torch.no_grad():
         for batch_x, batch_y in loader:
             outputs = model(batch_x)
-            preds = (torch.sigmoid(outputs) > 0.5).float()
+            preds = (torch.sigmoid(outputs) > threshold).float()
             all_preds.append(preds)
             all_labels.append(batch_y)
     all_preds = torch.cat(all_preds, dim=0)

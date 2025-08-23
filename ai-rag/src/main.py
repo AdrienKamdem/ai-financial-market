@@ -26,6 +26,19 @@ def main():
     y_train_tensor = torch.tensor(np.array([int(l) for l in y_train]), dtype=torch.float32).unsqueeze(1)
     y_test_tensor = torch.tensor(np.array([int(l) for l in y_test]), dtype=torch.float32).unsqueeze(1)
 
+    ### ADDED: class balance check
+    unique_train, counts_train = np.unique(y_train_tensor.numpy(), return_counts=True)
+    unique_test, counts_test = np.unique(y_test_tensor.numpy(), return_counts=True)
+
+    print("\nClass distribution in training set:")
+    for cls, count in zip(unique_train, counts_train):
+        print(f"  Class {int(cls)}: {count} samples")
+
+    print("Class distribution in test set:")
+    for cls, count in zip(unique_test, counts_test):
+        print(f"  Class {int(cls)}: {count} samples")
+    print("-" * 50, "\n")
+
     # Define hyperparameter grid
     param_grid = {
         "hidden1": [128, 256],
@@ -33,10 +46,16 @@ def main():
         "batch_size": [32, 64],
         "lr": [0.01, 0.001, 0.1],
         "optimizer": ["SGD", "Adam"],
-        "epochs": [10, 50, 100]
+        "epochs": [10, 50, 100],
+        "thresholds": [0.009, 0.0095, 0.0085, 0.007] # imbalanced data
+
     }
 
     results = []
+
+    #Regularization during training
+    lambda_l2 = 0.01 # for elastic net regression to avoid overfitting and make weights smaller (big shift of weights during training when big error)
+    lambda_l1 = 0.001 # for elactic net regression to avoid overfitting and make weights smaller (big shift of weights during training when big error)
 
     # Grid Search
     for params in itertools.product(*param_grid.values()):
@@ -54,19 +73,21 @@ def main():
 
         # Optimizer
         if config["optimizer"] == "SGD":
-            optimizer = optim.SGD(model.parameters(), lr=config["lr"], momentum=0.9)
+            optimizer = optim.SGD(model.parameters(), lr=config["lr"], momentum=0.9, weight_decay=lambda_l2)
         else:
-            optimizer = optim.Adam(model.parameters(), lr=config["lr"])
+            optimizer = optim.Adam(model.parameters(), lr=config["lr"], weight_decay=lambda_l2)
 
         # Loss
-        criterion = nn.BCEWithLogitsLoss()
+        class_counts = torch.bincount(y_train_tensor.squeeze().long())
+        class_weights = 1.0 / class_counts.float()
+        criterion = nn.BCEWithLogitsLoss(pos_weight=class_weights[1])
 
         # Train
-        loss_history = train_model(train_loader, model, optimizer, criterion, epochs=config["epochs"])
+        loss_history = train_model(train_loader, model, optimizer, criterion, lambda_l1, epochs=config["epochs"])
 
         # Evaluate metrics on training and test sets
-        train_metrics = evaluate_model(train_loader, model)
-        test_metrics = evaluate_model(test_loader, model)
+        train_metrics = evaluate_model(train_loader, model, threshold=config["thresholds"])
+        test_metrics = evaluate_model(test_loader, model, threshold=config["thresholds"])
 
         results.append({
             "config": config,
